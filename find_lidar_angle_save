@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+
+import rospy
+import math
+import csv
+import os
+from datetime import datetime
+from sensor_msgs.msg import LaserScan
+
+file_path = os.path.expanduser("~/lidar_data.csv")
+
+# create file with header
+if not os.path.exists(file_path):
+    with open(file_path, mode='w') as file:
+        writer = csv.writer(file)
+        writer.writerow(["Timestamp", "Distance_m", "Angle_deg"])
+
+def callback(msg):
+    valid_ranges = []
+
+    for i, r in enumerate(msg.ranges):
+
+        if math.isinf(r) or math.isnan(r):
+            continue
+
+        if r <= msg.range_min or r >= msg.range_max:
+            continue
+
+        angle_rad = msg.angle_min + i * msg.angle_increment
+        angle_deg = math.degrees(angle_rad)
+
+        valid_ranges.append((r, angle_deg))
+
+    if not valid_ranges:
+        rospy.logwarn("No valid LiDAR readings")
+        return
+
+    min_distance, min_angle = min(valid_ranges, key=lambda x: x[0])
+
+    rospy.loginfo("Closest object: %.2f m at %.1f degrees",
+                  min_distance, min_angle)
+
+    # save to csv
+    timestamp = datetime.now().strftime("%H:%M:%S")
+
+    with open(file_path, mode='a') as file:
+        writer = csv.writer(file)
+        writer.writerow([timestamp,
+                         round(min_distance, 2),
+                         round(min_angle, 1)])
+
+def main():
+    rospy.init_node("find_lidar_angle")
+    rospy.Subscriber("/scan", LaserScan, callback)
+    rospy.spin()
+
+if __name__ == "__main__":
+    main()
