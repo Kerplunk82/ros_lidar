@@ -32,7 +32,7 @@ def callback(msg):
     rospy.loginfo("Closest valid object: %.2f m at %.1f degrees", min_distance, min_angle)
 
 def main():
-    rospy.init_node("front_obstacle_detector")
+    rospy.init_node("find_lidar_angle")
     rospy.Subscriber("/scan", LaserScan, callback)
     rospy.spin()
 
