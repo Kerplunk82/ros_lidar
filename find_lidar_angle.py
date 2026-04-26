@@ -30,7 +30,7 @@ def callback(msg):
     min_distance, min_angle = min(valid_ranges, key=lambda x: x[0])
 
     rospy.loginfo("Closest valid object: %.2f m at %.1f degrees", min_distance, min_angle)
-    rospy.sleep(1)
+    rospy.sleep(0.25)
 
 def main():
     rospy.init_node("find_lidar_angle")
