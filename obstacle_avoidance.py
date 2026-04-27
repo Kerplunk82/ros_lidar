@@ -6,76 +6,97 @@ from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 
 
-class LidarObstacleAvoidanceP:
+class ObstacleAvoidanceP:
     def __init__(self):
-        rospy.init_node("lidar_obstacle_avoidance_p")
+        rospy.init_node("obstacle_avoidance_p")
 
+        # Desired safe distance from obstacle (m)
         self.safe_distance = 0.35
+
+        # Front detection sector: -30° to +30°
         self.front_angle_limit = 30.0
 
-        self.kp = 4.0
-        self.forward_speed = 0.10
-        self.reverse_speed = -0.08
-        self.min_turn_speed = 0.70
-        self.max_turn_speed = 1.50
+        # Proportional gain
+        self.kp = 25.0
 
+        # Forward speed when path is clear
+        self.forward_speed = 0.12
+
+        # ROS communication
         self.cmd_pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
         rospy.Subscriber("/scan", LaserScan, self.scan_callback)
 
-        rospy.loginfo("LiDAR obstacle avoidance P controller started.")
+        rospy.loginfo("P Controller Obstacle Avoidance Started")
 
     def scan_callback(self, msg):
-        valid_front_ranges = []
+        front_points = []
 
+        # Read LiDAR data
         for i, r in enumerate(msg.ranges):
+
+            # Ignore invalid values
             if math.isinf(r) or math.isnan(r):
                 continue
 
             if r <= msg.range_min or r >= msg.range_max:
                 continue
 
+            # Convert index to angle
             angle_rad = msg.angle_min + i * msg.angle_increment
             angle_deg = math.degrees(angle_rad)
 
+            # Keep only front sector
             if -self.front_angle_limit <= angle_deg <= self.front_angle_limit:
-                valid_front_ranges.append((r, angle_deg))
+                front_points.append((r, angle_deg))
 
-        if not valid_front_ranges:
-            rospy.logwarn("No valid front LiDAR readings")
+        if not front_points:
+            rospy.logwarn("No valid front obstacle data")
             return
 
-        min_distance, min_angle = min(valid_front_ranges, key=lambda x: x[0])
-
-        rospy.loginfo(
-            "Front closest object: %.3f m at %.1f degrees",
-            min_distance,
-            min_angle
-        )
+        # Closest obstacle in front
+        min_distance, min_angle = min(front_points, key=lambda x: x[0])
 
         cmd = Twist()
 
-        if min_distance <= self.safe_distance:
-            rospy.logwarn("Obstacle detected. Reverse and turn.")
-
-            error = self.safe_distance - min_distance
-            turn_speed = self.kp * error
-
-            turn_speed = max(turn_speed, self.min_turn_speed)
-            turn_speed = min(turn_speed, self.max_turn_speed)
-
-            cmd.linear.x = self.reverse_speed
-            cmd.angular.z = turn_speed
-
-        else:
+        # Path clear
+        if min_distance > self.safe_distance:
             cmd.linear.x = self.forward_speed
             cmd.angular.z = 0.0
+
+            rospy.loginfo(
+                "Clear path | Distance: %.3f m",
+                min_distance
+            )
+
+        # Obstacle detected
+        else:
+            # Recalculate error every scan
+            error = self.safe_distance - min_distance
+
+            # Pure P controller
+            turn_speed = self.kp * error
+
+            cmd.linear.x = 0.0
+
+            # Turn away from obstacle
+            if min_angle >= 0:
+                cmd.angular.z = -turn_speed   # turn right
+            else:
+                cmd.angular.z = turn_speed    # turn left
+
+            rospy.loginfo(
+                "Obstacle: %.3f m | Error: %.3f | Turn: %.3f",
+                min_distance,
+                error,
+                cmd.angular.z
+            )
 
         self.cmd_pub.publish(cmd)
 
 
 if __name__ == "__main__":
     try:
-        LidarObstacleAvoidanceP()
+        ObstacleAvoidanceP()
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
